@@ -1,0 +1,31 @@
+{
+  "curso": "Historia de la Psicología",
+  "clases": [
+    {
+      "id": "cognicion-situada",
+      "titulo": "Cognición situada",
+      "lectura": "Barbara Rogoff",
+      "instruccion": [
+        "Identifique una herramienta concreta que utilice cotidianamente.",
+        "Responda las siguientes preguntas."
+      ],
+      "preguntas": [
+        {
+          "id": "herramienta",
+          "tipo": "corta",
+          "texto": "Herramienta que utilizo cotidianamente"
+        },
+        {
+          "id": "destrezas",
+          "tipo": "larga",
+          "texto": "¿Qué destrezas o habilidades cognitivas requiere?"
+        },
+        {
+          "id": "valores",
+          "tipo": "larga",
+          "texto": "¿Qué valores culturales podrían estar a la base de su uso?"
+        }
+      ]
+    }
+  ]
+}

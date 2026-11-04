@@ -1,0 +1,303 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Bitácora de clase</title>
+<style>
+  :root {
+    --bg: #faf8f4; --fg: #26231f; --muted: #6b645a; --line: #ddd6c8;
+    --accent: #7a3b2e; --card: #ffffff; --ok: #3d6b4a;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg: #1d1b18; --fg: #ece7de; --muted: #a39b8d; --line: #3a362f;
+            --accent: #d98a78; --card: #26231f; --ok: #8fc29d; }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--fg);
+         font: 17px/1.55 Georgia, "Times New Roman", serif; }
+  .wrap { max-width: 720px; margin: 0 auto; padding: 24px 16px 80px; }
+  h1 { font-size: 1.5rem; margin: 0 0 2px; }
+  .sub { color: var(--muted); margin: 0 0 20px; font-size: .95rem; }
+  nav { display: flex; gap: 8px; border-bottom: 1px solid var(--line); margin-bottom: 20px; }
+  nav button { background: none; border: 0; padding: 10px 14px; cursor: pointer;
+               font: inherit; color: var(--muted); border-bottom: 2px solid transparent; }
+  nav button[aria-selected="true"] { color: var(--fg); border-bottom-color: var(--accent); }
+  select { font: inherit; padding: 6px 8px; background: var(--card); color: var(--fg);
+           border: 1px solid var(--line); border-radius: 6px; max-width: 100%; }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 10px;
+          padding: 18px; margin-bottom: 16px; }
+  .instr { margin: 0 0 18px; padding-left: 1.2em; }
+  label { display: block; font-weight: bold; margin: 18px 0 6px; }
+  textarea, input[type=text] { width: 100%; font: inherit; padding: 10px;
+    background: var(--bg); color: var(--fg); border: 1px solid var(--line); border-radius: 6px; }
+  textarea { min-height: 130px; resize: vertical; }
+  .row { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin-top: 20px; }
+  button.btn { font: inherit; padding: 8px 14px; border-radius: 6px; cursor: pointer;
+    border: 1px solid var(--line); background: var(--card); color: var(--fg); }
+  button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+  button.danger { color: #b3261e; }
+  .status { color: var(--ok); font-size: .9rem; min-height: 1.2em; }
+  .aviso { font-size: .9rem; color: var(--muted); border-left: 3px solid var(--accent);
+           padding: 4px 12px; margin: 0 0 20px; }
+  .resp { white-space: pre-wrap; margin: 4px 0 14px; }
+  .q { font-weight: bold; }
+  .vacio { color: var(--muted); font-style: italic; }
+  small { color: var(--muted); }
+  [hidden] { display: none !important; }
+  @media print {
+    nav, .row, .aviso, select, #selector-wrap { display: none !important; }
+    body { background: #fff; color: #000; }
+    .card { border: 0; padding: 0; }
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1 id="curso">Bitácora de clase</h1>
+  <p class="sub">Tus respuestas son solo tuyas.</p>
+
+  <p class="aviso">
+    Lo que escribas se guarda <b>únicamente en este navegador y dispositivo</b>; no se envía a ningún servidor ni lo ve nadie más.
+    Si borras los datos del navegador, usas modo incógnito o cambias de dispositivo, se perderá.
+    Por eso, al terminar cada clase, <b>descarga tu archivo</b>.
+  </p>
+
+  <nav role="tablist">
+    <button role="tab" id="tab-actividad" aria-selected="true">Actividad</button>
+    <button role="tab" id="tab-bitacora" aria-selected="false">Mi bitácora</button>
+  </nav>
+
+  <section id="vista-actividad">
+    <div id="selector-wrap" class="card" hidden>
+      <label for="selector" style="margin-top:0">Clase</label>
+      <select id="selector"></select>
+    </div>
+    <div id="actividad"></div>
+  </section>
+
+  <section id="vista-bitacora" hidden>
+    <div id="bitacora"></div>
+  </section>
+</div>
+
+<script>
+(function () {
+  "use strict";
+  var KEY = "bitacora-clase:v1";
+  var data = null;        // contenido de preguntas.json
+  var claseActual = null; // id de la clase mostrada
+
+  // ---------- almacenamiento (con tolerancia a fallos) ----------
+  function leer() {
+    try { return JSON.parse(localStorage.getItem(KEY)) || {}; } catch (e) { return {}; }
+  }
+  function escribir(obj) {
+    try { localStorage.setItem(KEY, JSON.stringify(obj)); return true; } catch (e) { return false; }
+  }
+
+  // ---------- utilidades ----------
+  function el(tag, props, children) {
+    var n = document.createElement(tag);
+    Object.keys(props || {}).forEach(function (k) {
+      if (k === "text") n.textContent = props[k];
+      else if (k === "class") n.className = props[k];
+      else n.setAttribute(k, props[k]);
+    });
+    (children || []).forEach(function (c) { n.appendChild(c); });
+    return n;
+  }
+  function slug(s) {
+    return s.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "")
+            .replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
+  }
+  function fechaLarga(iso) {
+    try { return new Date(iso).toLocaleDateString("es-CL", { year: "numeric", month: "long", day: "numeric" }); }
+    catch (e) { return ""; }
+  }
+  function buscarClase(id) {
+    return data.clases.filter(function (c) { return c.id === id; })[0];
+  }
+
+  // ---------- vista: actividad ----------
+  function renderActividad() {
+    var cont = document.getElementById("actividad");
+    cont.innerHTML = "";
+    var clase = buscarClase(claseActual);
+    var guardado = (leer()[clase.id] || {}).respuestas || {};
+
+    var card = el("div", { class: "card" });
+    card.appendChild(el("h2", { text: clase.titulo, style: "margin-top:0" }));
+    if (clase.lectura) card.appendChild(el("small", { text: "Lectura base: " + clase.lectura }));
+
+    var ol = el("ol", { class: "instr", style: "margin-top:12px" });
+    clase.instruccion.forEach(function (t) { ol.appendChild(el("li", { text: t })); });
+    card.appendChild(ol);
+
+    var status = el("div", { class: "status", "aria-live": "polite" });
+
+    clase.preguntas.forEach(function (p) {
+      var id = "q-" + p.id;
+      card.appendChild(el("label", { "for": id, text: p.texto }));
+      var campo = p.tipo === "corta"
+        ? el("input", { type: "text", id: id, autocomplete: "off" })
+        : el("textarea", { id: id });
+      campo.value = guardado[p.id] || "";
+      campo.addEventListener("input", function () { guardarClase(clase, status); });
+      card.appendChild(campo);
+    });
+
+    var row = el("div", { class: "row" });
+    var bDescargar = el("button", { class: "btn primary", type: "button", text: "Descargar mi archivo (.md)" });
+    bDescargar.addEventListener("click", function () { descargar(clase); });
+    var bImprimir = el("button", { class: "btn", type: "button", text: "Imprimir / guardar PDF" });
+    bImprimir.addEventListener("click", function () { window.print(); });
+    row.appendChild(bDescargar);
+    row.appendChild(bImprimir);
+    row.appendChild(status);
+    card.appendChild(row);
+    cont.appendChild(card);
+  }
+
+  var timer = null;
+  function guardarClase(clase, status) {
+    clearTimeout(timer);
+    timer = setTimeout(function () {
+      var todo = leer();
+      var prev = todo[clase.id] || {};
+      var respuestas = {};
+      clase.preguntas.forEach(function (p) {
+        respuestas[p.id] = document.getElementById("q-" + p.id).value;
+      });
+      todo[clase.id] = {
+        respuestas: respuestas,
+        creado: prev.creado || new Date().toISOString(),
+        actualizado: new Date().toISOString()
+      };
+      var ok = escribir(todo);
+      status.textContent = ok ? "Guardado en este dispositivo" : "No se pudo guardar: descarga tu archivo.";
+      status.style.color = ok ? "" : "#b3261e";
+    }, 400);
+  }
+
+  // ---------- exportación ----------
+  function aMarkdown(clase, reg) {
+    var l = [];
+    l.push("# " + data.curso + " — " + clase.titulo);
+    if (clase.lectura) l.push("*Lectura base: " + clase.lectura + "*");
+    if (reg && reg.creado) l.push("*Fecha: " + fechaLarga(reg.creado) + "*");
+    l.push("");
+    clase.preguntas.forEach(function (p) {
+      var r = ((reg && reg.respuestas && reg.respuestas[p.id]) || "").trim();
+      l.push("## " + p.texto);
+      l.push("");
+      l.push(r || "_(sin respuesta)_");
+      l.push("");
+    });
+    return l.join("\n");
+  }
+  function descargar(clase) {
+    var reg = leer()[clase.id];
+    // si hay texto sin guardar todavía en pantalla, lo tomamos de ahí
+    if (clase.id === claseActual && document.getElementById("q-" + clase.preguntas[0].id)) {
+      var respuestas = {};
+      clase.preguntas.forEach(function (p) { respuestas[p.id] = document.getElementById("q-" + p.id).value; });
+      reg = { respuestas: respuestas, creado: (reg && reg.creado) || new Date().toISOString() };
+    }
+    var fecha = (reg && reg.creado ? reg.creado : new Date().toISOString()).slice(0, 10);
+    var blob = new Blob([aMarkdown(clase, reg)], { type: "text/markdown;charset=utf-8" });
+    var a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = slug(data.curso) + "_" + slug(clase.titulo) + "_" + fecha + ".md";
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(function () { URL.revokeObjectURL(a.href); }, 1000);
+  }
+
+  // ---------- vista: bitácora ----------
+  function renderBitacora() {
+    var cont = document.getElementById("bitacora");
+    cont.innerHTML = "";
+    var todo = leer();
+    var hay = false;
+
+    data.clases.forEach(function (clase) {
+      var reg = todo[clase.id];
+      var tieneTexto = reg && reg.respuestas && Object.keys(reg.respuestas).some(function (k) {
+        return (reg.respuestas[k] || "").trim();
+      });
+      if (!tieneTexto) return;
+      hay = true;
+
+      var card = el("div", { class: "card" });
+      card.appendChild(el("h2", { text: clase.titulo, style: "margin:0" }));
+      card.appendChild(el("small", { text: fechaLarga(reg.creado) +
+        (reg.actualizado && reg.actualizado.slice(0,10) !== reg.creado.slice(0,10)
+          ? " · editado " + fechaLarga(reg.actualizado) : "") }));
+
+      clase.preguntas.forEach(function (p) {
+        var r = (reg.respuestas[p.id] || "").trim();
+        card.appendChild(el("div", { class: "q", text: p.texto, style: "margin-top:14px" }));
+        card.appendChild(el("div", { class: "resp" + (r ? "" : " vacio"), text: r || "(sin respuesta)" }));
+      });
+
+      var row = el("div", { class: "row" });
+      var bEditar = el("button", { class: "btn", type: "button", text: "Volver a esta clase" });
+      bEditar.addEventListener("click", function () { claseActual = clase.id; mostrar("actividad"); });
+      var bDesc = el("button", { class: "btn primary", type: "button", text: "Descargar (.md)" });
+      bDesc.addEventListener("click", function () { descargar(clase); });
+      var bBorrar = el("button", { class: "btn danger", type: "button", text: "Borrar" });
+      bBorrar.addEventListener("click", function () {
+        if (confirm("¿Borrar tus respuestas de «" + clase.titulo + "» de este dispositivo? No se puede deshacer.")) {
+          var t = leer(); delete t[clase.id]; escribir(t); renderBitacora();
+        }
+      });
+      [bEditar, bDesc, bBorrar].forEach(function (b) { row.appendChild(b); });
+      card.appendChild(row);
+      cont.appendChild(card);
+    });
+
+    if (!hay) cont.appendChild(el("p", { class: "vacio", text: "Aún no tienes respuestas guardadas en este dispositivo." }));
+  }
+
+  // ---------- navegación ----------
+  function mostrar(vista) {
+    var act = vista === "actividad";
+    document.getElementById("vista-actividad").hidden = !act;
+    document.getElementById("vista-bitacora").hidden = act;
+    document.getElementById("tab-actividad").setAttribute("aria-selected", act);
+    document.getElementById("tab-bitacora").setAttribute("aria-selected", !act);
+    if (act) { document.getElementById("selector").value = claseActual; renderActividad(); }
+    else renderBitacora();
+  }
+
+  // ---------- inicio ----------
+  function iniciar(json) {
+    data = json;
+    document.getElementById("curso").textContent = data.curso;
+    document.title = data.curso + " · Bitácora";
+
+    var sel = document.getElementById("selector");
+    data.clases.forEach(function (c) { sel.appendChild(el("option", { value: c.id, text: c.titulo })); });
+    // por defecto, la última clase del archivo
+    claseActual = data.clases[data.clases.length - 1].id;
+    document.getElementById("selector-wrap").hidden = data.clases.length < 2;
+    sel.addEventListener("change", function () { claseActual = sel.value; renderActividad(); });
+
+    document.getElementById("tab-actividad").addEventListener("click", function () { mostrar("actividad"); });
+    document.getElementById("tab-bitacora").addEventListener("click", function () { mostrar("bitacora"); });
+    mostrar("actividad");
+  }
+
+  fetch("preguntas.json", { cache: "no-cache" })
+    .then(function (r) { if (!r.ok) throw new Error(r.status); return r.json(); })
+    .then(iniciar)
+    .catch(function () {
+      document.getElementById("actividad").appendChild(el("p", {
+        text: "No se pudo cargar preguntas.json. Si abriste el archivo directamente desde tu computador, " +
+              "pruébalo desde la página publicada en GitHub Pages o con un servidor local."
+      }));
+    });
+})();
+</script>
+</body>
+</html>
